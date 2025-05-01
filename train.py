@@ -48,7 +48,7 @@ def training(args):
 
     data_path = "./datasets/single-body_2d_3classes 2"
     train_labels = [(0, 0, 0), (0, 0, 1), (1, 0, 0), (0, 1, 0)]
-    train_dataset, test_datasets = diffusion_ds(data_path, train_labels, args.pixel_size)
+    train_dataset, test_datasets = diffusion_ds(data_path, train_labels, args.pixel_size, 1000, 100)
 
     n_classes = [2, 2, 2]
 

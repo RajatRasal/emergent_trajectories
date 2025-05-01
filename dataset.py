@@ -181,8 +181,19 @@ def aggregrate_datasets(path: str, pixel_size: int = 28, train_subset_size: int 
     return train_dicts, test_dicts
 
 
-def diffusion_ds(path: str, train_labels: List[Tuple[int, int, int]], pixel_size: int = 32):
-    train_dicts, test_dicts = aggregrate_datasets(path, pixel_size, 1000, 50)
+def diffusion_ds(
+    path: str,
+    train_labels: List[Tuple[int, int, int]],
+    pixel_size: int = 32,
+    train_subset_size: int = 1000,
+    test_subset_size: int = 50,
+):
+    train_dicts, test_dicts = aggregrate_datasets(
+        path,
+        pixel_size,
+        train_subset_size,
+        test_subset_size,
+    )
     train_ds = ConcatDataset([train_dicts[l] for l in train_labels])
     return train_ds, test_dicts
 

@@ -12,7 +12,7 @@ poetry run python3 -m train \
     --n_sample 50 \
     --seed $1 \
     --batch_size 64 \
-    --n_T 100 \
+    --n_T 400 \
     --pixel_size 28 \
     --scheduler DDPM \
     --max_steps 20000 \
