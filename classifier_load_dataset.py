@@ -79,6 +79,6 @@ class my_dataset(Dataset):
 
 if __name__ == '__main__':
     transform = transforms.Compose([transforms.ToTensor()])
-    dataset = my_dataset(transform, dataset="single-body_2d_color_0.05", n_class_size=1, n_class_color=1, configs=["000","010","100","001"])
+    dataset = my_dataset(transform, dataset="single-body_2d_color_0.05", n_class_size=1, n_class_color=1, configs=["000", "010", "100", "001"])
     dataloader = DataLoader(dataset, batch_size=4)
 

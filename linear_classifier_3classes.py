@@ -1,29 +1,20 @@
+import os
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
-import torch.utils.data as data
 
-import torchvision.transforms as transforms
-import torchvision.datasets as datasets
+from torch.utils.data import DataLoader
 
-from sklearn import metrics
-from sklearn import decomposition
-from sklearn import manifold
-from tqdm.notebook import trange, tqdm
-import matplotlib.pyplot as plt
-import numpy as np
+from tqdm.notebook import tqdm
 
-import copy
-import random
 import time
-import classifier_load_dataset
-import itertools
-import json
+from torch.utils.data import random_split
 
+from dataset import classifier_ds
 
 
 class MLP(nn.Module):
+
     def __init__(self, input_dim, output_dims):
         super().__init__()
 
@@ -43,15 +34,14 @@ class MLP(nn.Module):
         return y_pred 
 
 
-
 def train(model, iterator, optimizer, criterion, device):
-
     epoch_loss = 0
     epoch_acc = {0: 0, 1: 0, 2: 0}
     model.train()
 
-    for (x, y) in tqdm(iterator, desc="Training", leave=False):
+    for (x, y) in tqdm(iterator, desc="Training"):
         x = x.to(device)
+        y = [_y.to(device) for _y in y]
         optimizer.zero_grad()
         y_pred = model(x)
         loss = criterion(y_pred[0], y[0]) + criterion(y_pred[1], y[1]) + criterion(y_pred[2], y[2])
@@ -72,39 +62,36 @@ def train(model, iterator, optimizer, criterion, device):
 
     return epoch_loss / len(iterator), epoch_acc 
 
+
 def calc_mse(pred, gt): 
     return torch.sqrt(torch.mean((pred-gt)**2))
     
 
+@torch.no_grad()
 def evaluate(model, iterator, criterion, device):
-
     epoch_loss = 0
-    #epoch_acc = 0
     epoch_acc = {0: 0, 1: 0, 2: 0}
 
     model.eval()
-    with torch.no_grad():
-        for (x, y) in tqdm(iterator, desc="Evaluating", leave=False):
-            x = x.to(device)
-            #y = _y[key].to(device)
-
-            y_pred = model(x)
-            loss = criterion(y_pred[0], y[0]) + criterion(y_pred[1], y[1]) + criterion(y_pred[2], y[2])
-            acc = {}
-            acc[0] = calculate_accuracy(y_pred[0], y[0])
-            acc[1] = calculate_accuracy(y_pred[1], y[1])
-            acc[2] = calculate_accuracy(y_pred[2], y[2])
-            epoch_loss += loss.item()
-            #epoch_acc += acc.item()
-            epoch_acc[0] += acc[0].item()
-            epoch_acc[1] += acc[1].item()
-            epoch_acc[2] += acc[2].item()
+    for (x, y) in tqdm(iterator, desc="Evaluating"):
+        x = x.to(device)
+        y = [_y.to(device) for _y in y]
+        y_pred = model(x)
+        loss = criterion(y_pred[0], y[0]) + criterion(y_pred[1], y[1]) + criterion(y_pred[2], y[2])
+        acc = {}
+        acc[0] = calculate_accuracy(y_pred[0], y[0])
+        acc[1] = calculate_accuracy(y_pred[1], y[1])
+        acc[2] = calculate_accuracy(y_pred[2], y[2])
+        epoch_loss += loss.item()
+        epoch_acc[0] += acc[0].item()
+        epoch_acc[1] += acc[1].item()
+        epoch_acc[2] += acc[2].item()
 
     epoch_acc[0] /= len(iterator)
     epoch_acc[1] /= len(iterator)
     epoch_acc[2] /= len(iterator)
 
-    return epoch_loss / len(iterator), epoch_acc #/ len(iterator)
+    return epoch_loss / len(iterator), epoch_acc
 
 
 def calculate_accuracy(y_pred, y):
@@ -122,73 +109,50 @@ def epoch_time(start_time, end_time):
 
 
 if __name__ == "__main__": 
+    classifier_path = "./models/classifier/shapes/"
+    os.makedirs(classifier_path, exist_ok=True)
+    best_model_path = os.path.join(classifier_path, "model.pt")
 
-    dataset = "single-body_2d_3classes"
-    properties_json = "properties_"+dataset+".json"
-    with open(properties_json, 'r') as f: 
-        properties = json.load(f)
-
-    keys, values = zip(*properties.items())
-    permutations = [dict(zip(keys, v)) for v in itertools.product(*values)]
-    
-    configs = []
-    for permutation in permutations:
-        configs.append("".join(permutation.values()))
-    
-    
+    data_path = "./datasets/single-body_2d_3classes 2"
     pixel_size = 28
-    n_class_color = 2 #3
+    train_ds, test_ds = classifier_ds(data_path, pixel_size)
+    train_ds, val_ds = random_split(train_ds, [0.9, 0.1])
 
-    tf = transforms.Compose([transforms.Resize((pixel_size,pixel_size)), transforms.ToTensor()])
-    train_dataset = classifier_load_dataset.my_dataset(tf, 5000, dataset, configs=configs, training=True, n_class_color=n_class_color)
-    test_data = classifier_load_dataset.my_dataset(tf, 500, dataset, configs=configs, training=True, n_class_color=n_class_color)
-
-    train_data, valid_data = data.random_split(train_dataset, [4500, 500])
     BATCH_SIZE = 128
-    valid_data = copy.deepcopy(valid_data)
-    train_iterator = data.DataLoader(train_data, shuffle=True, batch_size=BATCH_SIZE)
-    valid_iterator = data.DataLoader(valid_data, batch_size=BATCH_SIZE)
-    test_iterator = data.DataLoader(test_data, batch_size=BATCH_SIZE)
+    train_iterator = DataLoader(train_ds, shuffle=True, batch_size=BATCH_SIZE)
+    val_iterator = DataLoader(val_ds, shuffle=True, batch_size=BATCH_SIZE)
+    test_iterator = DataLoader(test_ds, batch_size=BATCH_SIZE)
     
-    
-    INPUT_DIM = pixel_size * pixel_size * 3 #4
+    INPUT_DIM = pixel_size * pixel_size * 3
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-
-    #for key in ["shapes","colors","sizes"]:
-    OUTPUT_DIMS = [len(properties[key]) for key in ["shapes","colors","sizes"]]
-    OUTPUT_DIMS[1] = n_class_color
+    OUTPUT_DIMS = [2, 2, 2]
     model = MLP(INPUT_DIM, OUTPUT_DIMS)
     optimizer = optim.Adam(model.parameters())
     criterion = nn.CrossEntropyLoss()
-    #model = model.to(device)
+    model = model.to(device)
     criterion = criterion.to(device)
     
-    EPOCHS = 10 #200
+    EPOCHS = 10
     best_valid_loss = float('inf')
     
-    for epoch in trange(EPOCHS):
-    
+    for epoch in range(EPOCHS):
         start_time = time.monotonic()
     
         train_loss, train_acc = train(model, train_iterator, optimizer, criterion, device)
-        valid_loss, valid_acc = evaluate(model, valid_iterator, criterion, device)
+        valid_loss, valid_acc = evaluate(model, val_iterator, criterion, device)
     
         if valid_loss < best_valid_loss:
             best_valid_loss = valid_loss
-            torch.save(model.state_dict(), 'working/linear-classifier_'+dataset+'_multi-class.pt')
+            torch.save(model.state_dict(), best_model_path)
     
         end_time = time.monotonic()
-    
         epoch_mins, epoch_secs = epoch_time(start_time, end_time)
     
-        print(f'Epoch: {epoch+1:02} | Epoch Time: {epoch_mins}m {epoch_secs}s')
-        print(f'\tTrain Loss: {train_loss:.3f} | Train Acc: {train_acc[0]*100:.2f}% {train_acc[1]*100:.2f}% {train_acc[2]*100:.2f}%')
-        print(f'\tValid Loss: {valid_loss:.3f} | valid Acc: {valid_acc[0]*100:.2f}% {valid_acc[1]*100:.2f}% {valid_acc[2]*100:.2f}%')
-    
-    
+        print(f'Epoch: {epoch + 1:02} | Epoch Time: {epoch_mins}m {epoch_secs}s')
+        print(f'\tTrain Loss: {train_loss:.3f} | Train Acc: {train_acc[0] * 100:.2f}% {train_acc[1] * 100:.2f}% {train_acc[2] * 100:.2f}%')
+        print(f'\tValid Loss: {valid_loss:.3f} | Valid Acc: {valid_acc[0] * 100:.2f}% {valid_acc[1] * 100:.2f}% {valid_acc[2] * 100:.2f}%')
+
+    model.load_state_dict(torch.load(best_model_path, weights_only=True)) 
     test_loss, test_acc = evaluate(model, test_iterator, criterion, device)
-    #print(f'Test Loss: {test_loss:.3f} | Test Acc: {test_acc[0]*100:.2f}%')
-    print(f'\tTest Loss: {test_loss:.3f} | test Acc: {test_acc[0]*100:.2f}% {test_acc[1]*100:.2f}% {test_acc[2]*100:.2f}%')
-
-
+    print(f'\tTest Loss: {test_loss:.3f} | Test Acc: {test_acc[0]*100:.2f}% {test_acc[1]*100:.2f}% {test_acc[2]*100:.2f}%')
